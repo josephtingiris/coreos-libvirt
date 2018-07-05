@@ -64,43 +64,43 @@ fi
 #
 
 if [ "$USER" != "root" ]; then
-    ETC_QEMU_DIRS="/etc/qemu /etc/qemu-kvm"
-    for ETC_QEMU_DIR in $ETC_QEMU_DIRS; do
-        if [ -r $ETC_QEMU_DIR/${USER}.conf ]; then
-            echo "user.conf                = ${ETC_QEMU_DIR}/${USER}.conf (ok)"
+    Etc_Qemu_Dirs="/etc/qemu /etc/qemu-kvm"
+    for Etc_Qemu_Dir in $Etc_Qemu_Dirs; do
+        if [ -r $Etc_Qemu_Dir/${USER}.conf ]; then
+            echo "user.conf                = ${Etc_Qemu_Dir}/${USER}.conf (ok)"
         else
-            sudo bash -c "echo 'allow all' > $ETC_QEMU_DIR/${USER}.conf"
+            sudo bash -c "echo 'allow all' > $Etc_Qemu_Dir/${USER}.conf"
             if [ $? -eq 0 ]; then
-                echo "user.conf                = ${ETC_QEMU_DIR}/${USER}.conf (created)"
+                echo "user.conf                = ${Etc_Qemu_Dir}/${USER}.conf (created)"
             else
-                aborting "failed to create & allow all in $ETC_QEMU_DIR/${USER}.conf"
+                aborting "failed to create & allow all in $Etc_Qemu_Dir/${USER}.conf"
             fi
         fi
 
-        sudo chmod 660 $ETC_QEMU_DIR/${USER}.conf
+        sudo chmod 660 $Etc_Qemu_Dir/${USER}.conf
         if [ $? -ne 0 ]; then
-            aborting "failed to chmod 660 $ETC_QEMU_DIR/${USER}.conf"
+            aborting "failed to chmod 660 $Etc_Qemu_Dir/${USER}.conf"
         fi
 
-        sudo chown root:${USER} $ETC_QEMU_DIR/${USER}.conf
+        sudo chown root:${USER} $Etc_Qemu_Dir/${USER}.conf
         if [ $? -ne 0 ]; then
-            aborting "failed to chown root:${USER} $ETC_QEMU_DIR/${USER}.conf"
+            aborting "failed to chown root:${USER} $Etc_Qemu_Dir/${USER}.conf"
         fi
 
-        if [ -f $ETC_QEMU_DIR/bridge.conf ]; then
-            User_Include=$(cat $ETC_QEMU_DIR/bridge.conf | grep ^"include $ETC_QEMU_DIR/${USER}.conf")
+        if [ -f $Etc_Qemu_Dir/bridge.conf ]; then
+            User_Include=$(cat $Etc_Qemu_Dir/bridge.conf | grep ^"include $Etc_Qemu_Dir/${USER}.conf")
             if [ "$User_Include" == "" ]; then
-                sudo bash -c "echo 'include $ETC_QEMU_DIR/${USER}.conf' >> $ETC_QEMU_DIR/bridge.conf"
+                sudo bash -c "echo 'include $Etc_Qemu_Dir/${USER}.conf' >> $Etc_Qemu_Dir/bridge.conf"
                 if [ $? -eq 0 ]; then
-                    echo "bridge.conf              = ${ETC_QEMU_DIR}/bridge.conf (updated)"
+                    echo "bridge.conf              = ${Etc_Qemu_Dir}/bridge.conf (updated)"
                 else
-                    aborting "failed to update $ETC_QEMU_DIR.bridge.conf"
+                    aborting "failed to update $Etc_Qemu_Dir.bridge.conf"
                 fi
             else
-                echo "bridge.conf              = ${ETC_QEMU_DIR}/bridge.conf (ok)"
+                echo "bridge.conf              = ${Etc_Qemu_Dir}/bridge.conf (ok)"
             fi
         else
-            echo "$ETC_QEMU_DIR/bridge.conf    = not found"
+            echo "$Etc_Qemu_Dir/bridge.conf    = not found"
         fi
     done
     echo
@@ -116,7 +116,7 @@ echo "CoreOS_ISO_URL           = $CoreOS_ISO_URL"
 echo
 if [ ! -r "$CoreOS_ISO" ]; then
     echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
-    curl -L -O $CoreOS_ISO_URL
+    curl -s -L -O $CoreOS_ISO_URL
     if [ $? -eq 0 ] || [ -f ${CoreOS_ISO}.bz2 ]; then
         bunzip2 ${CoreOS_ISO}.bz2
     fi
@@ -139,7 +139,7 @@ if [ -x "$Ct" ]; then
 else
     if [ ! -x "$Ct" ] || [ "$Ct" == "" ]; then
         echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
-        curl -L -O $Ct_URL
+        curl -s -L -O $Ct_URL
         if [ -f "$Ct" ]; then
             chmod 755 $Ct
         else
@@ -148,11 +148,11 @@ else
     fi
 fi
 
-# CHANGE THIS via curl https://discovery.etcd.io/new?size=3
+# via curl https://discovery.etcd.io/new?size=3
 if [ -r "discovery.url.${Node_Prefix}" ]; then
     Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
 else
-    curl -q https://discovery.etcd.io/new?size=3 > "discovery.url.${Node_Prefix}"
+    curl -s -L https://discovery.etcd.io/new?size=3 -o "discovery.url.${Node_Prefix}"
     Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
 fi
 echo "Etcd_Discovery_URL       = $Etcd_Discovery_URL"
