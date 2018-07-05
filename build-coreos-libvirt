@@ -5,6 +5,7 @@
 CoreOS_ISO=coreos_production_qemu_image.img
 CoreOS_ISO_URL="https://stable.release.core-os.net/amd64-usr/current/coreos_production_qemu_image.img.bz2{,.sig}"
 Ct_URL="https://github.com/coreos/container-linux-config-transpiler/releases/download/v0.9.0/ct-v0.9.0-x86_64-unknown-linux-gnu"
+Mac_Address_Prefix="52:54:00"
 
 # NOTICE;
 # NOTICE; setting this to true will DELETE existing virtual machines of the same name ...
@@ -160,7 +161,7 @@ else
     if [ -r "discovery.url.${Node_Prefix}" ]; then
         Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
     else
-        curl -s -L https://discovery.etcd.io/new?size=3 -o "discovery.url.${Node_Prefix}"
+        curl -s -L https://discovery.etcd.io/new?size=${Nodes} -o "discovery.url.${Node_Prefix}"
         Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
     fi
 fi
@@ -185,8 +186,14 @@ while [ $Nodes -gt $Node_Counter ]; do
     fi
     Node_Name=${Node_Prefix}${Node_Number}
 
+    # create a 'consistent' mac address based on the node name
+    Mac_Address_Suffix_1=$(echo "${Node_Name}" | md5sum | cut -c 1-2)
+    Mac_Address_Suffix_2=$(echo "${Node_Name}" | md5sum | cut -c 3-4)
+    Mac_Address_Suffix_3=$(echo "${Node_Name}" | md5sum | cut -c 5-6)
+    Node_Mac_Address=$(echo "${Mac_Address_Prefix}:${Mac_Address_Suffix_1}:${Mac_Address_Suffix_2}:${Mac_Address_Suffix_3}" | awk '{print tolower($NF)}')
+
     Disk_Path=${Real_Path}/vm/$Node_Name
-    echo "Node_Name                = $Node_Name"
+    echo "Node_Name                = $Node_Name ($Node_Mac_Address)"
 
     if [ -d "$Disk_Path" ]; then
         echo "Disk_Path                = $Disk_Path (exists)"
@@ -299,7 +306,7 @@ while [ $Nodes -gt $Node_Counter ]; do
     Virt_Install_Args+=" --name $Node_Name"
     ip l s br0 &> /dev/null
     if [ $? -eq 0 ]; then
-        Virt_Install_Args+=" --network bridge:br0"
+        Virt_Install_Args+=" --network bridge:br0,mac=$Node_Mac_Address"
     fi
     Virt_Install_Args+=" --ram $RAM --vcpus $VCPU"
     Virt_Install_Args+=" --os-type=linux"
