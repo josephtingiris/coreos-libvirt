@@ -1,0 +1,31 @@
+# https://github.com/coreos/container-linux-config-transpiler/blob/master/doc/configuration.md
+networkd:
+  units:
+    - name: 20-dhcp.network
+      contents: |
+        [Match]
+        Name=e*
+
+        [Network]
+        DHCP=yes
+passwd:
+  users:
+    - name: core
+      password_hash: $6$ct4dIwnHLjzCVb5W$CVtVgXNHkUuZRog6eXpORpfP4tvBVxY0jw4UYz5VfHZfJSzM4cP9Opl5D15KLdxbZCnaZqTF04lcWsf2nejcE1
+      ssh_authorized_keys:
+        - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBVxxkTyq8DEBu5pfQzAzid4jIdDQhjDgVZGckzV/Q70'
+        - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBLPwh4f8WpCtb/EOpuz3U4ECTviSW7tBDQvWpndcD2q'
+    - name: root
+      password_hash: $6$ct4dIwnHLjzCVb5W$CVtVgXNHkUuZRog6eXpORpfP4tvBVxY0jw4UYz5VfHZfJSzM4cP9Opl5D15KLdxbZCnaZqTF04lcWsf2nejcE1
+      ssh_authorized_keys:
+        - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBVxxkTyq8DEBu5pfQzAzid4jIdDQhjDgVZGckzV/Q70'
+        - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBLPwh4f8WpCtb/EOpuz3U4ECTviSW7tBDQvWpndcD2q'
+storage:
+  files:
+    - filesystem: "root"
+      group:
+      path: "/etc/hostname"
+      user:
+      mode: 0420
+      contents:
+        inline: "Node_Name"

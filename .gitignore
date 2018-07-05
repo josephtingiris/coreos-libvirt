@@ -1,0 +1,8 @@
+*[0-9]
+*.img
+*.sig
+ct
+ct-*
+discovery.url*
+ignition-template.json
+vm

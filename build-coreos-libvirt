@@ -1,0 +1,325 @@
+#!/bin/bash
+
+# 20180705, joseph.tingiris@gmail.com
+
+# NOTICE;
+# NOTICE; setting this to true will DELETE existing virtual machines of the same name ...
+# NOTICE;
+Delete_Existing=0 # 0=true, 1=false
+
+function aborting {
+    echo "aborting ... $1"
+    exit 1
+}
+
+function usage() {
+    echo "$0 <machine name prefix> <# of nodes> [ram] [vcpu]"
+    echo
+    exit 2
+}
+
+Node_Prefix="$1"
+if [ "$Node_Prefix" == "" ]; then usage; fi
+
+Nodes="$2"
+if [ "$Nodes" == "" ]; then
+    Nodes=1
+fi
+let Nodes=$Nodes+0
+
+RAM="$3"
+if [ "$RAM" == "" ]; then
+    RAM=1024
+fi
+let RAM=$RAM+0
+
+VCPU="$4"
+if [ "$VCPU" == "" ]; then
+    VCPU=1
+fi
+let VCPU=$VCPU+0
+
+#
+# ensure everything needed is available ...
+#
+
+Qemu_Img=$(which qemu-img 2> /dev/null)
+if [ ! -x "$Qemu_Img" ] || [ "$Qemu_Img" == "" ]; then
+    aborting "qemu-img file not executable"
+fi
+
+Virt_Install=$(which virt-install 2> /dev/null)
+if [ ! -x "$Virt_Install" ] || [ "$Virt_Install" == "" ]; then
+    aborting "virt-install file not executable"
+fi
+
+Virsh=$(which virsh 2> /dev/null)
+if [ ! -x "$Virsh" ] || [ "$Virsh" == "" ]; then
+    aborting "virsh file not executable"
+fi
+
+#
+# in order to use the bridge interface, typically the vm must run as root
+# however, it *is* possible to allow non-root users access to the bridge(s) ...
+#
+
+if [ "$USER" != "root" ]; then
+    ETC_QEMU_DIRS="/etc/qemu /etc/qemu-kvm"
+    for ETC_QEMU_DIR in $ETC_QEMU_DIRS; do
+        if [ -r $ETC_QEMU_DIR/${USER}.conf ]; then
+            echo "user.conf                = ${ETC_QEMU_DIR}/${USER}.conf (ok)"
+        else
+            sudo bash -c "echo 'allow all' > $ETC_QEMU_DIR/${USER}.conf"
+            if [ $? -eq 0 ]; then
+                echo "user.conf                = ${ETC_QEMU_DIR}/${USER}.conf (created)"
+            else
+                aborting "failed to create & allow all in $ETC_QEMU_DIR/${USER}.conf"
+            fi
+        fi
+
+        sudo chmod 660 $ETC_QEMU_DIR/${USER}.conf
+        if [ $? -ne 0 ]; then
+            aborting "failed to chmod 660 $ETC_QEMU_DIR/${USER}.conf"
+        fi
+
+        sudo chown root:${USER} $ETC_QEMU_DIR/${USER}.conf
+        if [ $? -ne 0 ]; then
+            aborting "failed to chown root:${USER} $ETC_QEMU_DIR/${USER}.conf"
+        fi
+
+        if [ -f $ETC_QEMU_DIR/bridge.conf ]; then
+            User_Include=$(cat $ETC_QEMU_DIR/bridge.conf | grep ^"include $ETC_QEMU_DIR/${USER}.conf")
+            if [ "$User_Include" == "" ]; then
+                sudo bash -c "echo 'include $ETC_QEMU_DIR/${USER}.conf' >> $ETC_QEMU_DIR/bridge.conf"
+                if [ $? -eq 0 ]; then
+                    echo "bridge.conf              = ${ETC_QEMU_DIR}/bridge.conf (updated)"
+                else
+                    aborting "failed to update $ETC_QEMU_DIR.bridge.conf"
+                fi
+            else
+                echo "bridge.conf              = ${ETC_QEMU_DIR}/bridge.conf (ok)"
+            fi
+        else
+            echo "$ETC_QEMU_DIR/bridge.conf    = not found"
+        fi
+    done
+    echo
+fi
+
+#
+# download the coreos production qemu image (if necessary) ...
+#
+
+CoreOS_ISO=coreos_production_qemu_image.img
+CoreOS_ISO_URL="https://stable.release.core-os.net/amd64-usr/current/coreos_production_qemu_image.img.bz2{,.sig}"
+echo "CoreOS_ISO_URL           = $CoreOS_ISO_URL"
+echo
+if [ ! -r "$CoreOS_ISO" ]; then
+    echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
+    curl -L -O $CoreOS_ISO_URL
+    if [ $? -eq 0 ] || [ -f ${CoreOS_ISO}.bz2 ]; then
+        bunzip2 ${CoreOS_ISO}.bz2
+    fi
+fi
+if [ ! -r "$CoreOS_ISO" ]; then
+    aborting "can't find $CoreOS_ISO ISO"
+fi
+
+#
+# download container linux config transpiler (if necessary) ...
+#
+
+Ct_URL="https://github.com/coreos/container-linux-config-transpiler/releases/download/v0.9.0/ct-v0.9.0-x86_64-unknown-linux-gnu"
+Ct=$(basename "$Ct_URL")
+echo "Ct_URL                   = $Ct_URL"
+echo "Ct                       = $Ct"
+echo
+if [ -x "$Ct" ]; then
+    Ct=$(realpath "$Ct")
+else
+    if [ ! -x "$Ct" ] || [ "$Ct" == "" ]; then
+        echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
+        curl -L -O $Ct_URL
+        if [ -f "$Ct" ]; then
+            chmod 755 $Ct
+        else
+            aborting "$Ct file not executable"
+        fi
+    fi
+fi
+
+# CHANGE THIS via curl https://discovery.etcd.io/new?size=3
+if [ -r "discovery.url.${Node_Prefix}" ]; then
+    Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+else
+    curl -q https://discovery.etcd.io/new?size=3 > "discovery.url.${Node_Prefix}"
+    Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+fi
+echo "Etcd_Discovery_URL       = $Etcd_Discovery_URL"
+echo
+
+echo "Node_Prefix              = $Node_Prefix"
+echo "Nodes                    = $Nodes"
+echo "RAM                      = $RAM"
+echo "VCPU                     = $VCPU"
+echo
+
+Real_Path=$(realpath $(pwd))
+
+let Node_Counter=0
+while [ $Nodes -gt $Node_Counter ]; do
+    ((++Node_Counter))
+    if [ $Node_Counter -lt 10 ]; then
+        Node_Number=0${Node_Counter}
+    else
+        Node_Number=${Node_Counter}
+    fi
+    Node_Name=${Node_Prefix}${Node_Number}
+
+    Disk_Path=${Real_Path}/vm/$Node_Name
+    echo "Node_Name                = $Node_Name"
+
+    if [ -d "$Disk_Path" ]; then
+        echo "Disk_Path                = $Disk_Path (exists)"
+    fi
+
+    if [ ! -d "$Disk_Path" ]; then
+        mkdir -p "$Disk_Path"
+        if [ $? -eq 0 ]; then
+            echo "Disk_Path                = $Disk_Path (created)"
+        else
+            aborting "failed to mkdir $Disk_Path"
+        fi
+    fi
+
+    cd "${Disk_Path}"
+
+    if [ $? -ne 0 ]; then
+        aborting "failed to chdir $Disk_Path"
+    fi
+
+    Libvirt_Domain=$($Virsh list --all --name 2> /dev/null | grep ^${Node_Name}$)
+    if [ "$Libvirt_Domain" != "" ]; then
+        if [ $Delete_Existing -eq 0 ]; then
+            $Virsh destroy ${Node_Name} &> /dev/null
+            $Virsh undefine ${Node_Name} &> /dev/null
+        else
+            echo
+            echo "WARNING virsh domain $Node_Name exists! (skipping)"
+            echo
+            continue
+        fi
+    fi
+
+    Disk_Img="${Disk_Path}/${Node_Name}.qcow2"
+    if [ -f "${Disk_Img}" ]; then
+        if [ $Delete_Existing -eq 0 ]; then
+            rm -f "${Disk_Img}"
+            if [ $? -eq 0 ]; then
+                echo "Disk_Img                 = $Disk_Img (removed)"
+            else
+                aborting "failed to remove disk image $Disk_Img"
+            fi
+        else
+            echo "Disk_Img                 = $Disk_Img (exists)"
+            echo
+            echo "WARNING libvirt disk image ${Disk_Img} exists (skipping)"
+            echo
+            continue
+        fi
+    fi
+
+    if [ ! -f "${Disk_Img}" ]; then
+        $Qemu_Img create -f qcow2 -b ${Real_Path}/$CoreOS_ISO ${Disk_Path}/${Node_Name}.qcow2 &> /dev/null
+        if [ $? -eq 0 ]; then
+            echo "Disk_Img                 = $Disk_Img (created)"
+        else
+            aborting "failed to $Qemu_Img ${Real_Path}/$CoreOS_ISO ${Disk_Path}/${Node_Name}.qcow2"
+        fi
+    fi
+
+    Ignition_YML="${Real_Path}/ignition.yml"
+    Ignition_Template="${Real_Path}/ignition-template.json"
+    Ignition_JSON="${Disk_Path}/ignition.json"
+
+    if [ -f "$Ignition_YML" ]; then
+        echo "Ignition_YML             = $Ignition_YML (exists)"
+        if [ ! -f "$Ignition_Template" ] || [ $Delete_Existing -eq 0 ]; then
+            $Ct -platform custom -in-file "$Ignition_YML" -pretty > "$Ignition_Template"
+            if [ $? -eq 0 ]; then
+                echo "Ignition_Template        = $Ignition_Template (re-created)"
+            else
+                aborting "$Ct $Ignition_YML -pretty failed"
+            fi
+        fi
+
+        if [ -r "$Ignition_Template" ]; then
+            echo "Ignition_Template        = $Ignition_Template (exists)"
+            if [ -f "${Ignition_JSON}" ]; then
+                if [ $Delete_Existing -eq 0 ]; then
+                    cat "${Ignition_Template}" | sed -e "s#Etcd_Discovery_URL#$Etcd_Discovery_URL#g" -e "s#Node_Prefix#$Node_Prefix#g" -e "s#Node_Name#$Node_Name#g" > "${Ignition_JSON}"
+                    if [ $? -eq 0 ]; then
+                        echo "Ignition_JSON            = $Ignition_JSON (re-created)"
+                        #cat "$Ignition_JSON"
+                    else
+                        aborting "failed to re-create $Ignition_JSON"
+                    fi
+                fi
+            else
+                cat "${Ignition_Template}" | sed -e "/Node_Prefix/s//$Node_Prefix/g" -e "/Node_Name/s//$Node_Name/g" > "${Ignition_JSON}"
+                if [ $? -eq 0 ]; then
+                    echo "Ignition_JSON            = $Ignition_JSON (created)"
+                else
+                    aborting "failed to re-create $Ignition_JSON"
+                fi
+            fi
+        else
+            echo "Ignition_Template        = $Ignition_Template (file not found)"
+            exit
+        fi
+    else
+        echo "Ignition_YML             = $Ignition_YML (not found)"
+    fi
+
+
+    Libvirt_Domain_Xml="${Disk_Path}/${Node_Name}.xml"
+
+    Virt_Install_Args=""
+    Virt_Install_Args+=" --connect qemu:///system"
+    Virt_Install_Args+=" --import"
+    Virt_Install_Args+=" --name $Node_Name"
+    ip l s br0 &> /dev/null
+    if [ $? -eq 0 ]; then
+        Virt_Install_Args+=" --network bridge:br0"
+    fi
+    Virt_Install_Args+=" --ram $RAM --vcpus $VCPU"
+    Virt_Install_Args+=" --os-type=linux"
+    Virt_Install_Args+=" --os-variant=virtio26"
+    Virt_Install_Args+=" --disk path=${Disk_Img},format=qcow2,bus=virtio"
+    Virt_Install_Args+=" --vnc --noautoconsole"
+    Virt_Install_Args+=" --print-xml"
+
+    if [ ! -f $Libvirt_Domain_Xml ] || [ $Delete_Existing -eq 0 ]; then
+        #echo "$Virt_Install $Virt_Install_Args"
+        $Virt_Install $Virt_Install_Args > "${Libvirt_Domain_Xml}"
+        if [ $? -eq 0 ]; then
+            echo "Libvirt_Domain_Xml       = $Libvirt_Domain_Xml (created)"
+            if [ -r "${Ignition_JSON}" ]; then
+                sed -i 's|type="kvm"|type="kvm" xmlns:qemu="http://libvirt.org/schemas/domain/qemu/1.0"|' "${Disk_Path}/${Node_Name}.xml"
+                sed -i "/<\/devices>/a <qemu:commandline>\n  <qemu:arg value='-fw_cfg'/>\n  <qemu:arg value='name=opt/com.coreos/config,file=${Disk_Path}/ignition.json'/>\n</qemu:commandline>" "${Disk_Path}/${Node_Name}.xml"
+            fi
+        else
+            aborting "failed to create domain xml $Libvirt_Domain_Xml"
+        fi
+    else
+        echo "Libvirt_Domain_Xml       = $Libvirt_Domain_Xml (exists)"
+    fi
+
+    echo
+    $Virsh define "${Disk_Path}/${Node_Name}.xml"
+
+done
+
+cd "$Real_Path"
+
+exit
