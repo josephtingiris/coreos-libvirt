@@ -1,0 +1,35 @@
+#!/bin/bash
+
+PATH=/usr/bin:/usr/sbin
+
+RUN_METADATA=/run/metadata
+
+IPV4_HEAD=$(ip -4 addr 2> /dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v 127.0.0.1 | head -1)
+if [ "$IPV4_HEAD" == "" ]; then IPV4_HEAD="127.0.0.1"; fi
+
+IPV4_TAIL=$(ip -4 addr 2> /dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v 127.0.0.1 | tail -1)
+if [ "$IPV4_TAIL" == "" ]; then IPV4_TAIL="127.0.0.1"; fi
+
+IPV6_HEAD=$(ip -6 addr 2> /dev/null | grep scope\ link | grep -oP '(?<=inet6\s)[\da-f:]+' | grep -v ^::1 | head -1)
+if [ "$IPV6_HEAD" == "" ]; then IPV6_HEAD="::1"; fi
+
+IPV6_TAIL=$(ip -6 addr 2> /dev/null | grep scope\ link | grep -oP '(?<=inet6\s)[\da-f:]+' | grep -v ^::1 | tail -1)
+if [ "$IPV6_TAIL" == "" ]; then IPV6_TAIL="::1"; fi
+
+echo "$0 : IPV4_HEAD = $IPV4_HEAD"
+echo "$0 : IPV4_TAIL = $IPV4_TAIL"
+echo "$0 : IPV6_HEAD = $IPV6_HEAD"
+echo "$0 : IPV6_TAIL = $IPV6_TAIL"
+
+if [ ! -d "${RUN_METADATA}" ]; then
+    exit 1
+fi
+
+echo "COREOS_CUSTOM_HOSTNAME=$(hostname)" > "${RUN_METADATA}"/coreos
+echo "COREOS_CUSTOM_PRIVATE_IPV4=$IPV4_TAIL" >> "${RUN_METADATA}"/coreos
+echo "COREOS_CUSTOM_PUBLIC_IPV4=$IPV4_HEAD" >> "${RUN_METADATA}"/coreos
+echo "COREOS_CUSTOM_PRIVATE_IPV6=$IPV6_TAIL" >> "${RUN_METADATA}"/coreos
+echo "COREOS_CUSTOM_PUBLIC_IPV6=$IPV6_HEAD" >> "${RUN_METADATA}"/coreos
+#echo "COREOS_CUSTOM_VERSION=0.01" >> "${RUN_METADATA}"/coreos
+
+exit 0

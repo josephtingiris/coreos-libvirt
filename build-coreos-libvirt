@@ -2,10 +2,18 @@
 
 # 20180705, joseph.tingiris@gmail.com
 
+CoreOS_ISO=coreos_production_qemu_image.img
+CoreOS_ISO_URL="https://stable.release.core-os.net/amd64-usr/current/coreos_production_qemu_image.img.bz2{,.sig}"
+Ct_URL="https://github.com/coreos/container-linux-config-transpiler/releases/download/v0.9.0/ct-v0.9.0-x86_64-unknown-linux-gnu"
+
 # NOTICE;
 # NOTICE; setting this to true will DELETE existing virtual machines of the same name ...
 # NOTICE;
-Delete_Existing=0 # 0=true, 1=false
+if [ "$DELETE_COREOS_LIBVIRT" != "" ]; then
+    Delete_Existing=0 # if DELETE_COREOS_LIBVIRT is in the user's environment then it's on!
+else
+    Delete_Existing=1 # 0=true, 1=false
+fi
 
 function aborting {
     echo "aborting ... $1"
@@ -110,8 +118,6 @@ fi
 # download the coreos production qemu image (if necessary) ...
 #
 
-CoreOS_ISO=coreos_production_qemu_image.img
-CoreOS_ISO_URL="https://stable.release.core-os.net/amd64-usr/current/coreos_production_qemu_image.img.bz2{,.sig}"
 echo "CoreOS_ISO_URL           = $CoreOS_ISO_URL"
 echo
 if [ ! -r "$CoreOS_ISO" ]; then
@@ -129,7 +135,6 @@ fi
 # download container linux config transpiler (if necessary) ...
 #
 
-Ct_URL="https://github.com/coreos/container-linux-config-transpiler/releases/download/v0.9.0/ct-v0.9.0-x86_64-unknown-linux-gnu"
 Ct=$(basename "$Ct_URL")
 echo "Ct_URL                   = $Ct_URL"
 echo "Ct                       = $Ct"
@@ -148,12 +153,16 @@ else
     fi
 fi
 
-# via curl https://discovery.etcd.io/new?size=3
-if [ -r "discovery.url.${Node_Prefix}" ]; then
-    Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+if [ "$ETCD_DISCOVERY_URL" != "" ]; then
+    Etcd_Discovery_URL=$ETCD_DISCOVERY_URL # if this is in the user's environment then use it
 else
-    curl -s -L https://discovery.etcd.io/new?size=3 -o "discovery.url.${Node_Prefix}"
-    Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+    # via curl https://discovery.etcd.io/new?size=3
+    if [ -r "discovery.url.${Node_Prefix}" ]; then
+        Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+    else
+        curl -s -L https://discovery.etcd.io/new?size=3 -o "discovery.url.${Node_Prefix}"
+        Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+    fi
 fi
 echo "Etcd_Discovery_URL       = $Etcd_Discovery_URL"
 echo
@@ -245,7 +254,7 @@ while [ $Nodes -gt $Node_Counter ]; do
     if [ -f "$Ignition_YML" ]; then
         echo "Ignition_YML             = $Ignition_YML (exists)"
         if [ ! -f "$Ignition_Template" ] || [ $Delete_Existing -eq 0 ]; then
-            $Ct -platform custom -in-file "$Ignition_YML" -pretty > "$Ignition_Template"
+            $Ct -files-dir "${Real_Path}" -platform custom -in-file "$Ignition_YML" -pretty > "$Ignition_Template"
             if [ $? -eq 0 ]; then
                 echo "Ignition_Template        = $Ignition_Template (re-created)"
             else
@@ -317,6 +326,11 @@ while [ $Nodes -gt $Node_Counter ]; do
 
     echo
     $Virsh define "${Disk_Path}/${Node_Name}.xml"
+    if [ $? -eq 0 ]; then
+        echo "virsh start ${Node_Name}; virsh console ${Node_Name}"
+    else
+        aborting "failed to $Virsh define ${Disk_Path}/${Node_Name}.xml"
+    fi
 
 done
 

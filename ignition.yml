@@ -35,8 +35,7 @@ storage:
       user:
       mode: 0755
       contents:
-        remote:
-          url: "http://00000000.in/coreos-metadata-custom"
+        local: coreos-metadata-qemu
 systemd:
   units:
     - name: "coreos-metadata.service"
