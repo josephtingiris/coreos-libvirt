@@ -116,7 +116,7 @@ echo "CoreOS_ISO_URL           = $CoreOS_ISO_URL"
 echo
 if [ ! -r "$CoreOS_ISO" ]; then
     echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
-    curl -s -L -O $CoreOS_ISO_URL
+    curl -L -O $CoreOS_ISO_URL
     if [ $? -eq 0 ] || [ -f ${CoreOS_ISO}.bz2 ]; then
         bunzip2 ${CoreOS_ISO}.bz2
     fi
@@ -139,7 +139,7 @@ if [ -x "$Ct" ]; then
 else
     if [ ! -x "$Ct" ] || [ "$Ct" == "" ]; then
         echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
-        curl -s -L -O $Ct_URL
+        curl -L -O $Ct_URL
         if [ -f "$Ct" ]; then
             chmod 755 $Ct
         else
