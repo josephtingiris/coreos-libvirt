@@ -140,7 +140,7 @@ fi
 echo "CoreOS_ISO_URL           = $CoreOS_ISO_URL"
 echo
 if [ ! -r "$CoreOS_ISO" ]; then
-    echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
+    echo "Downloading $CoreOS_ISO ..."
     curl -L -O $CoreOS_ISO_URL
     if [ $? -eq 0 ]; then
         if [ -f ${CoreOS_ISO}.bz2 ]; then
@@ -161,13 +161,12 @@ fi
 
 Ct=$(basename "$Ct_URL")
 echo "Ct_URL                   = $Ct_URL"
-echo "Ct                       = $Ct"
 echo
 if [ -x "$Ct" ]; then
     Ct=$(realpath "$Ct")
 else
     if [ ! -x "$Ct" ] || [ "$Ct" == "" ]; then
-        echo "downloading $Ct from $Ct_URL ..."
+        echo "Downloading $Ct ..."
         curl -L -O $Ct_URL
         if [ $? -eq 0 ]; then
             if [ -f "$Ct" ]; then
