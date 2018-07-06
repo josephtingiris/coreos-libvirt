@@ -1,4 +1,11 @@
 # https://github.com/coreos/container-linux-config-transpiler/blob/master/doc/configuration.md
+etcd:
+  name:                        "{HOSTNAME}"
+  listen_client_urls:          "http://0.0.0.0:2379,http://0.0.0.0:4001"
+  advertise_client_urls:       "http://{PUBLIC_IPV4}:2379,http://{PUBLIC_IPV4}:4001"
+  listen_peer_urls:            "http://0.0.0.0:2380,http://0.0.0.0:7001"
+  initial_advertise_peer_urls: "http://{PUBLIC_IPV4}:2380,http://{PUBLIC_IPV4}:7001"
+  discovery:                   "Etcd_Discovery_URL"
 networkd:
   units:
     - name: 10-dhcp.network
@@ -54,3 +61,20 @@ systemd:
             [Service]
             ExecStart=
             ExecStart=/opt/custom/bin/coreos-metadata-qemu
+    - name: etcd-member.service
+      enabled: true
+      dropins:
+        - name: Node_Name.conf
+          contents: |
+            [Unit]
+            After=coreos-metadata.service
+            [Service]
+            Environment="ETCD_NAME=Node_Name"
+    - name: systemd-network.service
+      enabled: true
+      dropins:
+        - name: "10-debug.conf"
+          contents: |
+            # https://coreos.com/os/docs/latest/network-config-with-networkd.html#enable-debugging-manually
+            [Service]
+            Environment=SYSTEMD_LOG_LEVEL=debug

@@ -1,13 +1,19 @@
 # https://github.com/coreos/container-linux-config-transpiler/blob/master/doc/configuration.md
 networkd:
   units:
-    - name: 20-dhcp.network
+    - name: 10-dhcp.network
       contents: |
+        # http://man7.org/linux/man-pages/man5/systemd.network.5.html
         [Match]
-        Name=e*
+        Name=eth*
 
         [Network]
         DHCP=yes
+
+        [DHCP]
+        ClientIdentifier=mac
+        UseDomains=true
+        UseNTP=false
 passwd:
   users:
     - name: core

@@ -1,13 +1,19 @@
 # https://github.com/coreos/container-linux-config-transpiler/blob/master/doc/configuration.md
 networkd:
   units:
-    - name: 20-dhcp.network
+    - name: 10-dhcp.network
       contents: |
+        # http://man7.org/linux/man-pages/man5/systemd.network.5.html
         [Match]
-        Name=e*
+        Name=eth*
 
         [Network]
         DHCP=yes
+
+        [DHCP]
+        ClientIdentifier=mac
+        UseDomains=true
+        UseNTP=false
 passwd:
   users:
     - name: core
@@ -41,9 +47,11 @@ systemd:
   units:
     - name: "coreos-metadata.service"
       dropins:
-        - name: "use-script.conf"
+        - name: "coreos-metadata-qemu.conf"
           contents: |
-            [Service]
             # https://github.com/coreos/container-linux-config-transpiler/blob/v0.8.0/doc/dynamic-data.md#custom-metadata-providers
+            [Unit]
+            After=network-online.target
+            [Service]
             ExecStart=
             ExecStart=/opt/custom/bin/coreos-metadata-custom
