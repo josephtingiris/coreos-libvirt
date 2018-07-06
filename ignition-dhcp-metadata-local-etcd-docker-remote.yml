@@ -1,0 +1,87 @@
+# https://github.com/coreos/container-linux-config-transpiler/blob/master/doc/configuration.md
+etcd:
+  name:                        "{HOSTNAME}"
+  listen_client_urls:          "http://0.0.0.0:2379,http://0.0.0.0:4001"
+  advertise_client_urls:       "http://{PUBLIC_IPV4}:2379,http://{PUBLIC_IPV4}:4001"
+  listen_peer_urls:            "http://0.0.0.0:2380,http://0.0.0.0:7001"
+  initial_advertise_peer_urls: "http://{PUBLIC_IPV4}:2380,http://{PUBLIC_IPV4}:7001"
+  discovery:                   "Etcd_Discovery_URL"
+networkd:
+  units:
+    - name: 10-dhcp.network
+      contents: |
+        # http://man7.org/linux/man-pages/man5/systemd.network.5.html
+        [Match]
+        Name=eth*
+
+        [Network]
+        DHCP=yes
+
+        [DHCP]
+        ClientIdentifier=mac
+        UseDomains=true
+        UseNTP=false
+passwd:
+  users:
+    - name: core
+      password_hash: $6$ct4dIwnHLjzCVb5W$CVtVgXNHkUuZRog6eXpORpfP4tvBVxY0jw4UYz5VfHZfJSzM4cP9Opl5D15KLdxbZCnaZqTF04lcWsf2nejcE1
+      ssh_authorized_keys:
+        - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBVxxkTyq8DEBu5pfQzAzid4jIdDQhjDgVZGckzV/Q70'
+        - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBLPwh4f8WpCtb/EOpuz3U4ECTviSW7tBDQvWpndcD2q'
+    - name: root
+      password_hash: $6$ct4dIwnHLjzCVb5W$CVtVgXNHkUuZRog6eXpORpfP4tvBVxY0jw4UYz5VfHZfJSzM4cP9Opl5D15KLdxbZCnaZqTF04lcWsf2nejcE1
+      ssh_authorized_keys:
+        - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBVxxkTyq8DEBu5pfQzAzid4jIdDQhjDgVZGckzV/Q70'
+        - 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBLPwh4f8WpCtb/EOpuz3U4ECTviSW7tBDQvWpndcD2q'
+storage:
+  files:
+    - filesystem: "root"
+      group:
+      path: "/etc/hostname"
+      user:
+      mode: 0420
+      contents:
+        inline: "Node_Name"
+    - filesystem: "root"
+      group:
+      path: "/opt/custom/bin/coreos-metadata-qemu"
+      user:
+      mode: 0755
+      contents:
+        local: coreos-metadata-qemu
+systemd:
+  units:
+    - name: "coreos-metadata.service"
+      enable: true
+      dropins:
+        - name: "coreos-metadata-qemu.conf"
+          contents: |
+            # https://github.com/coreos/container-linux-config-transpiler/blob/v0.8.0/doc/dynamic-data.md#custom-metadata-providers
+            [Unit]
+            After=network-online.target
+            [Service]
+            ExecStart=
+            ExecStart=/opt/custom/bin/coreos-metadata-qemu
+    - name: docker-tcp.socket
+      enable: true
+      contents: |
+        # https://coreos.com/os/docs/latest/customizing-docker.html
+        [Unit]
+        Description=Docker Socket for the API
+
+        [Socket]
+        ListenStream=2375
+        BindIPv6Only=both
+        Service=docker.service
+
+        [Install]
+        WantedBy=sockets.target
+    - name: etcd-member.service
+      enabled: true
+      dropins:
+        - name: Node_Name.conf
+          contents: |
+            [Unit]
+            After=coreos-metadata.service
+            [Service]
+            Environment="ETCD_NAME=Node_Name"
