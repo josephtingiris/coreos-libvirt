@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# 20180705, joseph.tingiris@gmail.com
+
 PATH=/usr/bin:/usr/sbin
 
 RUN_METADATA=/run/metadata
