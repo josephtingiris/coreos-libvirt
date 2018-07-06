@@ -174,16 +174,30 @@ fi
 
 if [ "$ETCD_DISCOVERY_URL" != "" ]; then
     Etcd_Discovery_URL=$ETCD_DISCOVERY_URL # if this is in the user's environment then use it
+    Etcd_Discovery_URL_Status="environment"
 else
+    if [ $Delete_Existing -eq 0 ] && [ -f "discovery.url.${Node_Prefix}" ]; then
+        rm "discovery.url.${Node_Prefix}"
+        if [ $? -ne 0 ]; then
+            aborting "failed to remove discovery.url.${Node_Prefix}"
+        fi
+        Etcd_Discovery_URL_Status="removed"
+    fi
     # via curl https://discovery.etcd.io/new?size=3
     if [ -r "discovery.url.${Node_Prefix}" ]; then
         Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+        Etcd_Discovery_URL_Status="reused"
     else
         curl -s -L https://discovery.etcd.io/new?size=${Nodes} -o "discovery.url.${Node_Prefix}"
         Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+        if [ "${Etcd_Discovery_URL_Status}" == "removed" ]; then
+            Etcd_Discovery_URL_Status="removed & updated"
+        else
+            Etcd_Discovery_URL_Status="updated"
+        fi
     fi
 fi
-echo "Etcd_Discovery_URL       = $Etcd_Discovery_URL"
+echo "Etcd_Discovery_URL       = $Etcd_Discovery_URL (${Etcd_Discovery_URL_Status})"
 echo
 
 echo "Node_Prefix              = $Node_Prefix"
