@@ -189,6 +189,9 @@ else
         Etcd_Discovery_URL_Status="reused"
     else
         curl -s -L https://discovery.etcd.io/new?size=${Nodes} -o "discovery.url.${Node_Prefix}"
+        if [ $? -ne 0 ] || [ ! -r "discovery.url.${Node_Prefix}" ]; then
+            aborting "failed to curl https://discovery.etcd.io/new?size=${Nodes}"
+        fi
         Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
         if [ "${Etcd_Discovery_URL_Status}" == "removed" ]; then
             Etcd_Discovery_URL_Status="removed & updated"
@@ -196,6 +199,9 @@ else
             Etcd_Discovery_URL_Status="updated"
         fi
     fi
+fi
+if [ "$Etcd_Discovery_URL" == "" ]; then
+    aborting "failed to get Etcd_Discovery_URL"
 fi
 echo "Etcd_Discovery_URL       = $Etcd_Discovery_URL (${Etcd_Discovery_URL_Status})"
 echo
