@@ -142,9 +142,14 @@ echo
 if [ ! -r "$CoreOS_ISO" ]; then
     echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
     curl -L -O $CoreOS_ISO_URL
-    if [ $? -eq 0 ] || [ -f ${CoreOS_ISO}.bz2 ]; then
-        bunzip2 ${CoreOS_ISO}.bz2
+    if [ $? -eq 0 ]; then
+        if [ -f ${CoreOS_ISO}.bz2 ]; then
+            bunzip2 ${CoreOS_ISO}.bz2
+        fi
+    else
+        aborting "failed to curl $CoreOS_ISO"
     fi
+    echo
 fi
 if [ ! -r "$CoreOS_ISO" ]; then
     aborting "can't find $CoreOS_ISO ISO"
@@ -162,13 +167,18 @@ if [ -x "$Ct" ]; then
     Ct=$(realpath "$Ct")
 else
     if [ ! -x "$Ct" ] || [ "$Ct" == "" ]; then
-        echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
+        echo "downloading $Ct from $Ct_URL ..."
         curl -L -O $Ct_URL
-        if [ -f "$Ct" ]; then
-            chmod 755 $Ct
+        if [ $? -eq 0 ]; then
+            if [ -f "$Ct" ]; then
+                chmod 755 $Ct
+            else
+                aborting "$Ct file not executable"
+            fi
         else
-            aborting "$Ct file not executable"
+            aborting "failed to curl $Ct_Url"
         fi
+        echo
     fi
 fi
 
@@ -334,7 +344,7 @@ while [ $Nodes -gt $Node_Counter ]; do
                     fi
                 fi
             else
-                cat "${Ignition_Template}" | sed -e "/Node_Prefix/s//$Node_Prefix/g" -e "/Node_Name/s//$Node_Name/g" > "${Ignition_JSON}"
+                cat "${Ignition_Template}" | sed -e "s#Etcd_Discovery_URL#$Etcd_Discovery_URL#g" -e "s#Node_Prefix#$Node_Prefix#g" -e "s#Node_Name#$Node_Name#g" > "${Ignition_JSON}"
                 if [ $? -eq 0 ]; then
                     echo "Ignition_JSON            = $Ignition_JSON (created)"
                 else
