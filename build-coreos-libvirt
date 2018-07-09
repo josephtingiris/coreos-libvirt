@@ -2,9 +2,15 @@
 
 # 20180705, joseph.tingiris@gmail.com
 
+#
+# Configurable Globals
+#
+
 CoreOS_ISO=coreos_production_qemu_image.img
 CoreOS_ISO_URL="https://stable.release.core-os.net/amd64-usr/current/coreos_production_qemu_image.img.bz2{,.sig}"
 Ct_URL="https://github.com/coreos/container-linux-config-transpiler/releases/download/v0.9.0/ct-v0.9.0-x86_64-unknown-linux-gnu"
+
+Bridge_Interface="br0"
 Mac_Address_Prefix="52:54:00"
 
 # NOTICE;
@@ -16,16 +22,27 @@ else
     Delete_Existing=1 # 0=true, 1=false
 fi
 
+#
+# functions
+#
+
 function aborting {
+    echo
     echo "aborting ... $1"
+    echo
     exit 1
 }
 
 function usage() {
-    echo "$0 <machine name prefix> <# of nodes> [ram] [vcpu]"
+    echo
+    echo "$0 <virtual machine (node) name prefix> <# of nodes> [ram] [vcpu]"
     echo
     exit 2
 }
+
+#
+# Main
+#
 
 Node_Prefix="$1"
 if [ "$Node_Prefix" == "" ]; then usage; fi
@@ -73,6 +90,7 @@ fi
 #
 
 if [ "$USER" != "root" ]; then
+    # attempt to allow this user access to the bridge interface via sudo
     Etc_Qemu_Dirs="/etc/qemu /etc/qemu-kvm"
     for Etc_Qemu_Dir in $Etc_Qemu_Dirs; do
         if [ -r $Etc_Qemu_Dir/${USER}.conf ]; then
@@ -122,11 +140,16 @@ fi
 echo "CoreOS_ISO_URL           = $CoreOS_ISO_URL"
 echo
 if [ ! -r "$CoreOS_ISO" ]; then
-    echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
+    echo "Downloading $CoreOS_ISO ..."
     curl -L -O $CoreOS_ISO_URL
-    if [ $? -eq 0 ] || [ -f ${CoreOS_ISO}.bz2 ]; then
-        bunzip2 ${CoreOS_ISO}.bz2
+    if [ $? -eq 0 ]; then
+        if [ -f ${CoreOS_ISO}.bz2 ]; then
+            bunzip2 ${CoreOS_ISO}.bz2
+        fi
+    else
+        aborting "failed to curl $CoreOS_ISO"
     fi
+    echo
 fi
 if [ ! -r "$CoreOS_ISO" ]; then
     aborting "can't find $CoreOS_ISO ISO"
@@ -138,34 +161,58 @@ fi
 
 Ct=$(basename "$Ct_URL")
 echo "Ct_URL                   = $Ct_URL"
-echo "Ct                       = $Ct"
 echo
 if [ -x "$Ct" ]; then
     Ct=$(realpath "$Ct")
 else
     if [ ! -x "$Ct" ] || [ "$Ct" == "" ]; then
-        echo "downloading $CoreOS_ISO from $CoreOS_ISO_URL ..."
+        echo "Downloading $Ct ..."
         curl -L -O $Ct_URL
-        if [ -f "$Ct" ]; then
-            chmod 755 $Ct
+        if [ $? -eq 0 ]; then
+            if [ -f "$Ct" ]; then
+                chmod 755 $Ct
+            else
+                aborting "$Ct file not executable"
+            fi
         else
-            aborting "$Ct file not executable"
+            aborting "failed to curl $Ct_Url"
         fi
+        echo
     fi
 fi
 
 if [ "$ETCD_DISCOVERY_URL" != "" ]; then
     Etcd_Discovery_URL=$ETCD_DISCOVERY_URL # if this is in the user's environment then use it
+    Etcd_Discovery_URL_Status="environment"
 else
+    if [ $Delete_Existing -eq 0 ] && [ -f "discovery.url.${Node_Prefix}" ]; then
+        rm "discovery.url.${Node_Prefix}"
+        if [ $? -ne 0 ]; then
+            aborting "failed to remove discovery.url.${Node_Prefix}"
+        fi
+        Etcd_Discovery_URL_Status="removed"
+    fi
     # via curl https://discovery.etcd.io/new?size=3
     if [ -r "discovery.url.${Node_Prefix}" ]; then
         Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+        Etcd_Discovery_URL_Status="reused"
     else
         curl -s -L https://discovery.etcd.io/new?size=${Nodes} -o "discovery.url.${Node_Prefix}"
+        if [ $? -ne 0 ] || [ ! -r "discovery.url.${Node_Prefix}" ]; then
+            aborting "failed to curl https://discovery.etcd.io/new?size=${Nodes}"
+        fi
         Etcd_Discovery_URL=$(cat "discovery.url.${Node_Prefix}")
+        if [ "${Etcd_Discovery_URL_Status}" == "removed" ]; then
+            Etcd_Discovery_URL_Status="removed & updated"
+        else
+            Etcd_Discovery_URL_Status="updated"
+        fi
     fi
 fi
-echo "Etcd_Discovery_URL       = $Etcd_Discovery_URL"
+if [ "$Etcd_Discovery_URL" == "" ]; then
+    aborting "failed to get Etcd_Discovery_URL"
+fi
+echo "Etcd_Discovery_URL       = $Etcd_Discovery_URL (${Etcd_Discovery_URL_Status})"
 echo
 
 echo "Node_Prefix              = $Node_Prefix"
@@ -187,10 +234,24 @@ while [ $Nodes -gt $Node_Counter ]; do
     Node_Name=${Node_Prefix}${Node_Number}
 
     # create a 'consistent' mac address based on the node name
-    Mac_Address_Suffix_1=$(echo "${Node_Name}" | md5sum | cut -c 1-2)
-    Mac_Address_Suffix_2=$(echo "${Node_Name}" | md5sum | cut -c 3-4)
-    Mac_Address_Suffix_3=$(echo "${Node_Name}" | md5sum | cut -c 5-6)
+    # otherwise dhcp leases will quickly run out during testing ...
+    Mac_Address_Suffix_1=$(echo "${Node_Name}" | md5sum 2> /dev/null | cut -c 1-2)
+    if [ "${#Mac_Address_Suffix_1}" -ne 2 ]; then
+        aborting "Mac_Address_Suffix_1 length is not 2 ($Mac_Address_Suffix_1)"
+    fi
+    Mac_Address_Suffix_2=$(echo "${Node_Name}" | md5sum | cut -c 5-6)
+    if [ "${#Mac_Address_Suffix_2}" -ne 2 ]; then
+        aborting "Mac_Address_Suffix_2 length is not 2 ($Mac_Address_Suffix_2)"
+    fi
+    Mac_Address_Suffix_3=$(echo "${Node_Name}" | md5sum | cut -c 9-10)
+    if [ "${#Mac_Address_Suffix_3}" -ne 2 ]; then
+        aborting "Mac_Address_Suffix_3 length is not 2 ($Mac_Address_Suffix_3)"
+    fi
+
     Node_Mac_Address=$(echo "${Mac_Address_Prefix}:${Mac_Address_Suffix_1}:${Mac_Address_Suffix_2}:${Mac_Address_Suffix_3}" | awk '{print tolower($NF)}')
+    if [ "${#Node_Mac_Address}" -ne 17 ]; then
+        aborting "Node_Mac_Address length is not 17 ($Node_Mac_Address)"
+    fi
 
     Disk_Path=${Real_Path}/vm/$Node_Name
     echo "Node_Name                = $Node_Name ($Node_Mac_Address)"
@@ -282,7 +343,7 @@ while [ $Nodes -gt $Node_Counter ]; do
                     fi
                 fi
             else
-                cat "${Ignition_Template}" | sed -e "/Node_Prefix/s//$Node_Prefix/g" -e "/Node_Name/s//$Node_Name/g" > "${Ignition_JSON}"
+                cat "${Ignition_Template}" | sed -e "s#Etcd_Discovery_URL#$Etcd_Discovery_URL#g" -e "s#Node_Prefix#$Node_Prefix#g" -e "s#Node_Name#$Node_Name#g" > "${Ignition_JSON}"
                 if [ $? -eq 0 ]; then
                     echo "Ignition_JSON            = $Ignition_JSON (created)"
                 else
@@ -304,9 +365,9 @@ while [ $Nodes -gt $Node_Counter ]; do
     Virt_Install_Args+=" --connect qemu:///system"
     Virt_Install_Args+=" --import"
     Virt_Install_Args+=" --name $Node_Name"
-    ip l s br0 &> /dev/null
+    ip l s ${Bridge_Interface} &> /dev/null
     if [ $? -eq 0 ]; then
-        Virt_Install_Args+=" --network bridge:br0,mac=$Node_Mac_Address"
+        Virt_Install_Args+=" --network bridge:${Bridge_Interface},mac=$Node_Mac_Address"
     fi
     Virt_Install_Args+=" --ram $RAM --vcpus $VCPU"
     Virt_Install_Args+=" --os-type=linux"
